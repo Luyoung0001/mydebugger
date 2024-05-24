@@ -45,11 +45,12 @@ class debugger {
         }
     }
     void continue_execution() {
-        ptrace(PT_CONTINUE, m_pid, nullptr, 0);
-        int wait_status;
-        auto options = 0;
-        waitpid(m_pid, &wait_status, options);
-    }
+    ptrace(PTRACE_CONT, m_pid, nullptr, nullptr);
+
+    int wait_status;
+    auto options = 0;
+    waitpid(m_pid, &wait_status, options);
+}
 
     void set_breakPoint(std::intptr_t addr) {
         std::cout << "Set breakpoint at address 0x" << std::hex << addr

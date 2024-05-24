@@ -12,8 +12,8 @@ int main(int argc, char *argv[]) {
     if (pid == 0) {
         // child progress
         // debugged progress
-        ptrace(PTRACE_TRACEME,0,nullptr,0);
-        execl(proj,proj,nullptr);
+        ptrace(PTRACE_TRACEME, 0, nullptr, nullptr);
+        execl(proj, proj, nullptr);
     } else if (pid >= 1) {
         // parent progress
         // debugger progress
