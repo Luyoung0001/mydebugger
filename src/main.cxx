@@ -1,4 +1,4 @@
-#include "../include/debugger.h"
+#include "../include/debugger.hpp"
 #include <cstddef>
 #include <iostream>
 #include <unistd.h>
@@ -12,7 +12,7 @@ int main(int argc, char *argv[]) {
     if (pid == 0) {
         // child progress
         // debugged progress
-        ptrace(_POSIX_TRACE,0,nullptr,0);
+        ptrace(PT_TRACE_ME,0,nullptr,0);
         execl(proj,proj,nullptr);
     } else if (pid >= 1) {
         // parent progress
