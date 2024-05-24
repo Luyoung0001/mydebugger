@@ -1,20 +1,18 @@
-#ifndef DEBUGGER_H_
-#define DEBUGGER_H_
+#ifndef DEBUGGER_HPP_
+#define DEBUGGER_HPP_
 
 #include "../ext/linenoise/linenoise.h"
-#include <cstdint>
+#include "breakpoint.hpp"
 #include <unordered_map>
-#include "helpers.h"
+#include "helpers.hpp"
 #include <cstddef>
 #include <iostream>
 #include <string>
-#include <sys/ptrace.h>
-#include <sys/wait.h>
 
 class debugger {
     std::string m_prog_name;
     pid_t m_pid;
-    // std::unordered_map<std::intptr_t, BreakPoint> m_breakPoints; // 存储断点
+    std::unordered_map<std::intptr_t, BreakPoint> m_breakPoints; // 存储断点
 
   public:
     // 这里不应该给默认参数，断言：传了正确的 prog_name，pid
@@ -38,10 +36,10 @@ class debugger {
         if (is_prefix(command, "continue")) {
             continue_execution();
 
-        // } else if (is_prefix(command, "break")) { // break 地址
-        //     std::string addr{args[1], 2};
-        //     set_breakPoint(std::stol(addr, 0, 16));
-        // }
+        } else if (is_prefix(command, "break")) { // break 地址
+            std::string addr{args[1], 2};
+            set_breakPoint(std::stol(addr, 0, 16));
+
         }else {
             std::cerr << "Unkown command\n";
         }
@@ -53,13 +51,13 @@ class debugger {
         waitpid(m_pid, &wait_status, options);
     }
 
-    // void set_breakPoint(std::intptr_t addr) {
-    //     std::cout << "Set breakpoint at address 0x" << std::hex << addr
-    //               << std::endl;
-    //     BreakPoint bp{m_pid, addr};
-    //     bp.enable();
-    //     m_breakPoints[addr] = bp;
-    // }
+    void set_breakPoint(std::intptr_t addr) {
+        std::cout << "Set breakpoint at address 0x" << std::hex << addr
+                  << std::endl;
+        BreakPoint bp{m_pid, addr};
+        bp.enable();
+        m_breakPoints[addr] = bp;
+    }
 
     ~debugger() {}
 };

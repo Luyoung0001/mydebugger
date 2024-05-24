@@ -1,5 +1,5 @@
-#ifndef BREAKPOINT_H_
-#define BREAKPOINT_H_
+#ifndef BREAKPOINT_HPP_
+#define BREAKPOINT_HPP_
 #include <cstdint>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
@@ -10,6 +10,7 @@ class BreakPoint {
     uint8_t m_saved_data; // 最低位的旧数据（1 字节）,之后需要恢复
 
   public:
+    BreakPoint(){}
     BreakPoint(pid_t pid, std::intptr_t addr)
         : m_pid(pid), m_addr(addr), m_enabled(false), m_saved_data{} {}
     auto is_enabled() const -> bool { return m_enabled; }
