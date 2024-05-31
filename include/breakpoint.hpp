@@ -35,7 +35,5 @@ public:
 
     m_enabled = false;
   }
-  
-
 };
 #endif

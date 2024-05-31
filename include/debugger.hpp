@@ -1,6 +1,8 @@
 #ifndef DEBUGGER_HPP_
 #define DEBUGGER_HPP_
 
+#include "../ext/libelfin/dwarf/dwarf++.hh"
+#include "../ext/libelfin/elf/elf++.hh"
 #include "../ext/linenoise/linenoise.h"
 #include "breakpoint.hpp"
 #include "helpers.hpp"
@@ -8,13 +10,16 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <fcntl.h> // 对于 open 和 O_RDONLY
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <linux/types.h>
 #include <string>
 #include <sys/user.h>
 #include <unordered_map>
 #include <utility>
-#include <iomanip>
 
 enum class reg {
   rax,
@@ -44,7 +49,6 @@ enum class reg {
   ss,
   ds,
   es
-
 };
 
 constexpr std::size_t n_registers = 27;
@@ -132,16 +136,24 @@ reg get_register_from_name(const std::string &name) {
 class debugger {
   std::string m_prog_name;
   pid_t m_pid;
+  dwarf::dwarf m_dwarf;
+  elf::elf m_elf;
+  uint64_t m_load_address;
   std::unordered_map<std::intptr_t, BreakPoint> m_breakPoints; // 存储断点
 
 public:
   // 这里不应该给默认参数，断言：传了正确的 prog_name，pid
   debugger(std::string prog_name, pid_t pid)
-      : m_prog_name(prog_name), m_pid(pid) {}
+      : m_prog_name{std::move(prog_name)}, m_pid{pid} {
+    auto fd = open(m_prog_name.c_str(), O_RDONLY);
+
+    m_elf = elf::elf{elf::create_mmap_loader(fd)};            //
+    m_dwarf = dwarf::dwarf{dwarf::elf::create_loader(m_elf)}; //
+  }
   void run() {
-    int wait_status;
-    auto options = 0;
-    waitpid(m_pid, &wait_status, options);
+    wait_for_signal();
+    initialise_load_address(); // load stack frame
+
     char *line = nullptr;
     while ((line = linenoise("minidbg> ")) != nullptr) {
       handl_command(line);
@@ -208,31 +220,62 @@ public:
   void dump_registers() {
     for (const auto &rd : g_register_descriptors) {
 
-      std::cout << rd.name << "0x" << std::setfill('0') << std::setw(16) << std::hex
-                << get_register_value(m_pid, rd.r) << std::endl;
+      std::cout << rd.name << ": 0x" << std::setfill('0') << std::setw(16)
+                << std::hex << get_register_value(m_pid, rd.r) << std::endl;
     }
   }
 
-  void step_over_breakpoint() {
-    auto possible_breakpoint_location =
-        get_pc() - 1; // 拿到当前正在执行的指令地址,int3
+  void wait_for_signal() {
+    int wait_status;
+    auto options = 0;
+    waitpid(m_pid, &wait_status, options);
 
-    if (m_breakPoints.count(possible_breakpoint_location)) {
-      auto &bp = m_breakPoints[possible_breakpoint_location]; // 得到断点
+    auto siginfo = get_signal_info();
+
+    switch (siginfo.si_signo) {
+    case SIGTRAP:
+      handle_sigtrap(siginfo);
+      break;
+    case SIGSEGV:
+      std::cout << "Segfalt. Reason: " << siginfo.si_code << std::endl;
+      break;
+    default:
+      std::cout << "Got signal " << strsignal(siginfo.si_signo) << std::endl;
+    }
+  }
+  // handlers
+  void handle_sigtrap(siginfo_t info) {
+    switch (info.si_code) {
+    // 断点
+    case SI_KERNEL:
+    case TRAP_BRKPT: {
+      set_pc(get_pc() - 1); // 即将重新执行当前指令
+      std::cout << "Hit breakpoint at address 0x" << std::hex << get_pc()
+                << std::endl;
+      auto offset_pc = offset_load_address(get_pc()); // 拿到当前 pc 的相对地址
+
+      auto line_entry = get_line_entry_from_pc(offset_pc);
+      print_source(line_entry->file->path, line_entry->line, 5u);
+      return;
+    }
+    // 单步执行
+    case TRAP_TRACE:
+      return;
+    default:
+      std::cout << "Unknown SIGTRAP code " << info.si_code << std::endl;
+      return;
+    }
+  }
+  void step_over_breakpoint() {
+    if (m_breakPoints.count(get_pc())) {
+      auto &bp = m_breakPoints[get_pc()];
       if (bp.is_enabled()) {
-        auto previous_instruction_address = possible_breakpoint_location;
-        set_pc(previous_instruction_address); // 重新执行当前断点指令
         bp.disable();
         ptrace(PTRACE_SINGLESTEP, m_pid, nullptr, nullptr);
         wait_for_signal();
         bp.enable();
       }
     }
-  }
-  void wait_for_signal() {
-    int wait_status;
-    auto options = 0;
-    waitpid(m_pid, &wait_status, options);
   }
   uint64_t read_memory(uint64_t address) {
     return ptrace(PTRACE_PEEKDATA, m_pid, address, nullptr);
@@ -242,14 +285,93 @@ public:
     ptrace(PTRACE_POKEDATA, m_pid, address, value);
   }
 
-void set_pc(uint64_t pc) {
-    set_register_value(m_pid, reg::rip, pc);
-}
+  void set_pc(uint64_t pc) { set_register_value(m_pid, reg::rip, pc); }
 
-uint64_t get_pc() {
-    return get_register_value(m_pid, reg::rip);
-}
+  uint64_t get_pc() { return get_register_value(m_pid, reg::rip); }
 
+  dwarf::die get_function_from_pc(uint64_t pc) {
+    for (auto &cu :
+         m_dwarf.compilation_units()) { // 在编译单元中遍历编译单元 cu
+      if (dwarf::die_pc_range(cu.root()).contains(
+              pc)) {                        // 如果某个 cu 中包含 pc
+        for (const auto &die : cu.root()) { // 然后在 cu 中遍历每一个 die
+          if (dwarf::die_pc_range(die).contains(pc)) {
+            return die;
+          }
+        }
+      }
+    }
+    throw std::out_of_range{"Cannot find function"};
+  }
+
+  dwarf::line_table::iterator get_line_entry_from_pc(uint64_t pc) {
+    for (auto &cu : m_dwarf.compilation_units()) {
+      if (dwarf::die_pc_range(cu.root()).contains(pc)) {
+        auto &lt = cu.get_line_table();
+        auto it = lt.find_address(pc);
+        if (it == lt.end()) {
+          throw std::out_of_range{"Cannot find line entry"};
+        } else {
+          return it;
+        }
+      }
+    }
+    throw std::out_of_range{"Cannot find line entry"};
+  }
+  void initialise_load_address() {
+    if (m_elf.get_hdr().type == elf::et::dyn) {
+      std::ifstream map("/proc" + std::to_string(m_pid) +
+                        "/maps"); // 在 maps中查找 load address
+      std::string addr;
+      std::getline(
+          map, addr,
+          '-'); // 比如：5641dcfbd000-5641dcfbe000 r--p 00000000 00:01 13647
+      m_load_address = std::stoi(addr, 0, 16);
+    }
+  }
+  uint64_t offset_load_address(uint64_t addr) { return addr - m_load_address; }
+
+  // file_name：要读取的文件名。
+  // line：关注的中心行号。
+  // n_lines_context：在中心行号周围需要打印的行的数量。
+  void print_source(const std::string &file_name, unsigned line,
+                    unsigned n_lines_context) {
+    std::ifstream file{file_name};
+
+    auto start_line = line <= n_lines_context ? 1 : line - n_lines_context;
+    auto end_line = line + n_lines_context +
+                    (line < n_lines_context ? n_lines_context - line : 0) + 1;
+
+    char c{};
+    auto current_line = 1u;
+
+    // 跳到开始的行
+    while (current_line != start_line && file.get(c)) {
+      if (c != '\n') {
+        ++current_line;
+      }
+    }
+    // 输出指针，如果我们在当前行
+    std::cout << (current_line == line ? "> " : " ");
+
+    // 打印行
+    while (current_line <= end_line && file.get(c)) {
+      std::cout << c;
+      if (c == '\n') {
+        ++current_line;
+        // 也同样输出当前行的指针
+        std::cout << (current_line == line ? "> " : " ");
+      }
+    }
+    std::cout << std ::endl; // 刷新且换行
+  }
+
+  // 得到发送到 被跟踪进程 最后一个信号
+  siginfo_t get_signal_info() {
+    siginfo_t info;
+    ptrace(PTRACE_GETSIGINFO, m_pid, nullptr, &info);
+    return info;
+  }
 
   ~debugger() {}
 };
