@@ -1,24 +1,35 @@
+cmake_minimum_required(VERSION 3.0)
 
-cmake_minimum_required (VERSION 3.0)
-project (MiniDbg)
+project(MINIDBG)
 
-add_compile_options(-std=c++14)
-
-include_directories(ext/libelfin ext/linenoise include)
-add_executable(minidbg src/minidbg.cpp ext/linenoise/linenoise.c)
-
-add_executable(hello examples/hello.cxx)
-set_target_properties(hello
-                      PROPERTIES COMPILE_FLAGS "-g -O0")
+# 定义变量
+set(ICLD_PATH ${CMAKE_SOURCE_DIR}/include)
+set(SRC_PATH ${CMAKE_SOURCE_DIR}/src)
+set(EXAMP_PATH ${CMAKE_SOURCE_DIR}/examples)
+set(LIB_PATH ${CMAKE_SOURCE_DIR}/lib)
+set(EXEC_PATH ${CMAKE_SOURCE_DIR}/bin)
 
 
+## 定义静态库的名称
+set(BP_LIB bplib)
+set(DBG_LIB dbglib)
+set(HELP_LIB helperlib)
+set(REGIS_LIB registerlib)
+set(LINENOISE_LIB linenoiselib)
 
-add_custom_target(
-   libelfin
-   COMMAND make
-   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/ext/libelfin
-)
-target_link_libraries(minidbg
-                      ${PROJECT_SOURCE_DIR}/ext/libelfin/dwarf/libdwarf++.so
-                      ${PROJECT_SOURCE_DIR}/ext/libelfin/elf/libelf++.so)
-add_dependencies(minidbg libelfin)
+## 定义可执行文件的名称
+set(APP_NAME_1 hello)
+set(APP_NAME_2 minidbg)
+
+# 添加子目录，确认 CMakeLists.txt 关系树
+add_subdirectory(breakpoint)
+add_subdirectory(debugger)
+add_subdirectory(examples)
+add_subdirectory(helper)
+add_subdirectory(register)
+add_subdirectory(src)
+add_subdirectory(linenoise)
+
+
+
+

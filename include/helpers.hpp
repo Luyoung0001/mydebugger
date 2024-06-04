@@ -1,25 +1,10 @@
-#ifndef HELPERS_HPP_
-#define HELPERS_HPP_
-
-#include <sstream>
+#pragma once
 #include <string>
 #include <vector>
 
+namespace helper {
+std::vector<std::string> split(const std::string &s, char delimiter);
 
-inline std::vector<std::string> split(const std::string &s, char delimiter) {
-  std::vector<std::string> out{};
-  std::stringstream ss{s};
-  std::string item;
+bool is_prefix(const std::string &s, const std::string &of);
 
-  while (std::getline(ss, item, delimiter)) {
-    out.push_back(item);
-  }
-
-  return out;
-}
-inline bool is_prefix(const std::string &s, const std::string &of) {
-  if (s.size() > of.size())
-    return false;
-  return std::equal(s.begin(), s.end(), of.begin());
-}
-#endif
+} // namespace helper

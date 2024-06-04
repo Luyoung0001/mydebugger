@@ -1,7 +1,6 @@
 #include "../include/debugger.hpp"
-#include <cstddef>
 #include <iostream>
-#include <sys/personality.h>
+#include <sys/ptrace.h>
 #include <unistd.h>
 int main(int argc, char *argv[]) {
   if (argc < 2) {
@@ -11,10 +10,9 @@ int main(int argc, char *argv[]) {
   auto proj = argv[1];
   auto pid = fork();
   if (pid == 0) {
-    personality(ADDR_NO_RANDOMIZE); // 取消随机内存
     // child progress
     // debugged progress
-    ptrace(PTRACE_TRACEME, 0, nullptr, nullptr);
+    ptrace(PT_TRACE_ME, 0, nullptr, 0);
     execl(proj, proj, nullptr);
   } else if (pid >= 1) {
     // parent progress
@@ -22,7 +20,7 @@ int main(int argc, char *argv[]) {
 
     std::cout << "Start debugging the progress: " << proj << ", pid = " << pid
               << ":\n";
-    debugger dbg(proj, pid);
+    debugger::Debugger dbg(proj, pid);
     dbg.run();
   }
 
