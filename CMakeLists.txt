@@ -21,6 +21,7 @@ set(LINENOISE_LIB linenoiselib)
 ## 定义可执行文件的名称
 set(APP_NAME_1 hello)
 set(APP_NAME_2 minidbg)
+set(APP_NAME_3 stack)
 
 # 添加子目录，确认 CMakeLists.txt 关系树
 add_subdirectory(breakpoint)

@@ -63,9 +63,9 @@ void Debugger::handle_sigtrap(siginfo_t info) {
     std::cout << "Hit breakpoint at adsress 0x" << std::hex << get_pc()
               << std::endl;
     auto offset_pc = offset_load_address(get_pc()); // 获取当前pc 的 offset
+    // 经过调试，下一行代码有问题
     auto line_entry =
         get_line_entry_from_pc(offset_pc); // 从 offset 返回 line_table 迭代器
-
     print_source(line_entry->file->path, line_entry->line); // 打印源代码
     return;
   }
@@ -213,6 +213,18 @@ void Debugger::handle_command(const std::string &line) {
 
   }
 
+  else if (helper::is_prefix(command, "step")) {
+    step_in();
+  }
+
+  else if (helper::is_prefix(command, "next")) {
+    step_over();
+  }
+
+  else if (helper::is_prefix(command, "finish")) {
+    step_out();
+  }
+
   else {
     std::cerr << "Unkown command\n";
   }
@@ -328,7 +340,7 @@ void Debugger::step_over() {
   auto start_line = get_line_entry_from_pc(get_offset_pc());
 
   std::vector<std::intptr_t> to_delete;
-  
+
   while (line->address < func_end) {
     auto load_adress = offset_load_address(line->address);
     if (line->address != start_line->address &&
@@ -347,7 +359,10 @@ void Debugger::step_over() {
     set_breakPoint(return_address);
     to_delete.push_back(return_address);
   }
+  // 停在这个函数内部任意一处，我不在乎，但是不能停在刚进入函数的那一行(line->address
+  // != start_line->address) 不然就会导致死循环
   continue_execution();
+  // 清除所有的新增的断点
   for (auto addr : to_delete) {
     remove_breakpoint(addr);
   }
@@ -421,14 +436,14 @@ dwarf::line_table::iterator Debugger::get_line_entry_from_pc(uint64_t pc) {
 
       auto it = lt.find_address(pc);
       if (it == lt.end()) {
-        throw std::out_of_range{"Cannot find line entry"};
+        throw std::out_of_range{"Cannot find line entry1"};
       } else {
         return it;
       }
     }
   }
   // 并没有找到 line table的时候 抛异常
-  throw std::out_of_range{"Cannot find line entry"};
+  throw std::out_of_range{"Cannot find line entry2"};
 }
 
 // 关于 pc 的 一些函数
