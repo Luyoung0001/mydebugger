@@ -1,4 +1,3 @@
-#pragma once
 #include "../include/breakpoint.hpp"
 #include <sys/ptrace.h>
 #include <sys/wait.h>

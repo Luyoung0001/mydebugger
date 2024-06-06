@@ -8,6 +8,6 @@ include_directories(${ICLD_PATH})
 
 aux_source_directory(./ SRC)
 
-set(LIBRARY_OUTPUT_DIRECTORY ${LIB_PATH})
+set(LIBRARY_OUTPUT_PATH ${LIB_PATH})
 
-add_library(${HELP_LIB} STATIC ${SRC})
+add_library(${HELP_LIB} SHARED ${SRC})

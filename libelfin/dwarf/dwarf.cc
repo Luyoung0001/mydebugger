@@ -273,7 +273,7 @@ compilation_unit::compilation_unit(const dwarf &file, section_offset offset)
         cursor sub(subsec);
         sub.skip_initial_length();
         uhalf version = sub.fixed<uhalf>();
-        if (version < 2 || version > 4)
+        if (version < 2 || version > 7)
                 throw format_error("unknown compilation unit version " + std::to_string(version));
         // .debug_abbrev-relative offset of this unit's abbrevs
         section_offset debug_abbrev_offset = sub.offset();
@@ -300,7 +300,7 @@ compilation_unit::get_line_table() const
                 }
 
                 auto comp_dir = d.has(DW_AT::comp_dir) ? at_comp_dir(d) : "";
-                
+
                 m->lt = line_table(sec, d[DW_AT::stmt_list].as_sec_offset(),
                                    m->subsec->addr_size, comp_dir,
                                    at_name(d));

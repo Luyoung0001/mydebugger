@@ -10,5 +10,5 @@ aux_source_directory(./ SRC)
 
 set(LIBRARY_OUTPUT_PATH ${LIB_PATH})
 
-# 生成静态库
-add_library(${BP_LIB} STATIC ${SRC})
+# 生成动态库
+add_library(${BP_LIB} SHARED ${SRC})

@@ -8,6 +8,7 @@ set(SRC_PATH ${CMAKE_SOURCE_DIR}/src)
 set(EXAMP_PATH ${CMAKE_SOURCE_DIR}/examples)
 set(LIB_PATH ${CMAKE_SOURCE_DIR}/lib)
 set(EXEC_PATH ${CMAKE_SOURCE_DIR}/bin)
+set(LIBELFIN_PATH ${CMAKE_SOURCE_DIR}/libelfin)
 
 
 ## 定义静态库的名称

@@ -8,4 +8,4 @@ include_directories(${ICLD_PATH})
 
 set(LIBRARY_OUTPUT_PATH ${LIB_PATH})
 
-add_library(${LINENOISE_LIB} STATIC ${SRC})
+add_library(${LINENOISE_LIB} SHARED ${SRC})
