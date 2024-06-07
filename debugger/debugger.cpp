@@ -89,7 +89,7 @@ void Debugger::initialise_load_address() {
 }
 
 // 获取加载地址的偏移量，因为 die 中记录偏移量
-u_int64_t Debugger::offset_load_address(u_int64_t addr) {
+std::intptr_t Debugger::offset_load_address(std::intptr_t addr) {
   return addr - m_load_address;
 }
 
@@ -170,7 +170,7 @@ void Debugger::handle_command(const std::string &line) {
   // 打断点
   else if (helper::is_prefix(command, "break")) { // break 地址
     std::string addr{args[1], 2};
-    set_breakPoint(std::stol(addr, 0, 16));
+    set_breakPoint(std::stoull(addr, 0, 16));
 
   }
 
@@ -179,11 +179,11 @@ void Debugger::handle_command(const std::string &line) {
     std::string addr{args[2], 2}; // assume 0xADDRESS
 
     if (helper::is_prefix(args[1], "read")) {
-      std::cout << std::hex << read_memory(std::stol(addr, 0, 16)) << std::endl;
+      std::cout << std::hex << read_memory(std::stoull(addr, 0, 16)) << std::endl;
     }
     if (helper::is_prefix(args[1], "write")) {
       std::string val{args[3], 2}; // assume 0xVAL
-      write_memory(std::stol(addr, 0, 16), std::stol(val, 0, 16));
+      write_memory(std::stoull(addr, 0, 16), std::stoul(val, 0, 16));
     }
   }
 
@@ -198,7 +198,7 @@ void Debugger::handle_command(const std::string &line) {
     } else if (helper::is_prefix(args[1], "write")) {
       std::string val{args[3], 2}; // assume 0xVAL
       set_register_value(m_pid, registers::get_register_from_name(args[2]),
-                         std::stol(val, 0, 16));
+                         std::stoull(val, 0, 16));
     }
   }
   // 单步执行
@@ -217,10 +217,9 @@ void Debugger::handle_command(const std::string &line) {
   // 单步执行，汇编指令级的
   else if (helper::is_prefix(command, "stepi")) {
     single_step_instruction_with_breakpoint_check();
-    auto line_entry = get_line_entry_from_pc(get_pc());
+    auto line_entry = get_line_entry_from_pc(get_offset_pc());
     // 打印源代码 context
     print_source(line_entry->file->path, line_entry->line);
-
   }
 
   else {
@@ -276,11 +275,11 @@ void Debugger::set_breakPoint(std::intptr_t addr) {
 // step_out
 void Debugger::step_out() {
   // 获取当前函数的函数栈帧，它存在 rbp 寄存器中
-  auto frame_pointer =
+  std::intptr_t frame_pointer =
       registers::get_register_value(m_pid, registers::reg::rbp);
   // 一般返回地址的值位于栈帧存储位置的上面（栈向下、地址减小的方向增涨）,uint64_t
   // 是单位，因此是 8 个字节
-  auto return_address = read_memory(frame_pointer + 8);
+  std::intptr_t return_address = read_memory(frame_pointer + 8);
 
   // 标记是否返回后移除这个断点，因为这个断点是为了返回停在那里才产生的，因此我们必须将它移除掉
   bool should_remove_breakpoint = false;
@@ -290,14 +289,16 @@ void Debugger::step_out() {
     set_breakPoint(return_address);
     should_remove_breakpoint = true;
   }
+
   continue_execution();
+
   if (should_remove_breakpoint) {
     remove_breakpoint(return_address);
   }
 }
 
 // 移除断点
-void Debugger::remove_breakpoint(uint64_t addr) {
+void Debugger::remove_breakpoint(std::intptr_t addr) {
   if (m_breakPoints.count(addr)) {
     auto &bp = m_breakPoints[addr];
     bp.disable();
@@ -307,10 +308,7 @@ void Debugger::remove_breakpoint(uint64_t addr) {
 
 // step_in
 void Debugger::step_in() {
-  std::cout << "debug info: \n";
-  std::cout << "get_offset_pc: " << get_offset_pc() << std::endl;
   // 拿到 line entry 的行编号
-
   auto line = get_line_entry_from_pc(get_offset_pc())->line;
 
   while (get_line_entry_from_pc(get_offset_pc())->line == line) {
@@ -322,12 +320,12 @@ void Debugger::step_in() {
   print_source(line_entry->file->path, line_entry->line);
 }
 
-uint64_t Debugger::get_offset_pc() { return offset_load_address(get_pc()); }
+std::intptr_t Debugger::get_offset_pc() { return offset_load_address(get_pc()); }
 
 // step_over
 // 有很多的方法，不过目前来说最简单的方法是给当前函数的每一个行打一个断点，然后
 // continue
-uint64_t Debugger::offset_dwarf_address(uint64_t addr) {
+std::intptr_t Debugger::offset_dwarf_address(std::intptr_t addr) {
   return addr + m_load_address;
 }
 void Debugger::step_over() {
@@ -353,9 +351,9 @@ void Debugger::step_over() {
     ++line;
   }
   // 移除这些断点
-  auto frame_pointer =
+  std::intptr_t frame_pointer =
       registers::get_register_value(m_pid, registers::reg::rbp);
-  auto return_address = read_memory(frame_pointer + 8);
+  std::intptr_t return_address = read_memory(frame_pointer + 8);
 
   if (!m_breakPoints.count(return_address)) {
     set_breakPoint(return_address);
@@ -365,7 +363,7 @@ void Debugger::step_over() {
   // != start_line->address) 不然就会导致死循环
   continue_execution();
   // 清除所有的新增的断点
-  for (auto addr : to_delete) {
+  for (std::intptr_t addr : to_delete) {
     remove_breakpoint(addr);
   }
 }
@@ -373,7 +371,7 @@ void Debugger::step_over() {
 // dwarf 文件信息处理
 
 // 从 pc 判断位于哪一个函数中
-dwarf::die Debugger::get_function_from_pc(u_int64_t pc) {
+dwarf::die Debugger::get_function_from_pc(std::intptr_t pc) {
   for (auto &cu : m_dwarf.compilation_units()) { // 循环遍历所有cu
     if (die_pc_range(cu.root()).contains(pc)) {
       for (const auto &die :
@@ -420,10 +418,7 @@ dwarf::die Debugger::get_function_from_pc(u_int64_t pc) {
 }
 
 // 从 pc 得到 line_table 的迭代器
-dwarf::line_table::iterator Debugger::get_line_entry_from_pc(uint64_t pc) {
-
-  std::cout << "At adsress 0x" << std::hex << get_pc() << std::endl;
-
+dwarf::line_table::iterator Debugger::get_line_entry_from_pc(std::intptr_t pc) {
   for (auto &cu : m_dwarf.compilation_units()) { // 遍历所有 cu
     if (die_pc_range(cu.root()).contains(pc)) {
       auto &lt = cu.get_line_table(); // 拿到 cu 的line table，line table
@@ -452,12 +447,12 @@ dwarf::line_table::iterator Debugger::get_line_entry_from_pc(uint64_t pc) {
 }
 
 // 关于 pc 的 一些函数
-uint64_t Debugger::get_pc() {
+std::intptr_t Debugger::get_pc() {
   // 从 rip 中或得 pc
   return registers::get_register_value(m_pid, registers::reg::rip);
 }
 
-void Debugger::set_pc(uint64_t pc) {
+void Debugger::set_pc(std::intptr_t pc) {
   // 直接修改 rip 为 pc
   set_register_value(m_pid, registers::reg::rip, pc);
 }
@@ -470,11 +465,11 @@ void Debugger::dump_registers() {
               << std::hex << get_register_value(m_pid, rd.r) << std::endl;
   }
 }
-uint64_t Debugger::read_memory(uint64_t address) {
+uint64_t Debugger::read_memory(std::intptr_t address) {
   return ptrace(PTRACE_PEEKDATA, m_pid, address, nullptr);
 }
 
-void Debugger::write_memory(uint64_t address, uint64_t value) {
+void Debugger::write_memory(std::intptr_t address, uint64_t value) {
   ptrace(PTRACE_POKEDATA, m_pid, address, value);
 }
 

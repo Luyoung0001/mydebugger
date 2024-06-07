@@ -18,7 +18,7 @@ class Debugger {
 
   dwarf::dwarf m_dwarf;
   elf::elf m_elf;
-  u_int64_t m_load_address; // elf 文件加载地址
+  std::intptr_t m_load_address; // elf 文件加载地址
 
 public:
   // 这里不应该给默认参数，断言：传了正确的 prog_name，pid
@@ -26,20 +26,20 @@ public:
   void run();
   void wait_for_signal();
   void initialise_load_address();
-  u_int64_t offset_load_address(u_int64_t addr);
+  std::intptr_t offset_load_address(std::intptr_t addr);
   void print_source(const std::string &file_name, unsigned line,
                     unsigned n_lines_context = 5u);
   siginfo_t get_signal_info();
   void handle_sigtrap(siginfo_t siginfo);
 
   // pc
-  uint64_t get_pc();
-  void set_pc(uint64_t pc);
+  std::intptr_t get_pc();
+  void set_pc(std::intptr_t pc);
 
   // read & write
   void dump_registers();
-  uint64_t read_memory(uint64_t address);
-  void write_memory(uint64_t address, uint64_t value);
+  uint64_t read_memory(std::intptr_t address);
+  void write_memory(std::intptr_t address, uint64_t value);
 
   // handlers
   void handle_command(const std::string &line);
@@ -52,13 +52,13 @@ public:
   void step_out();
   void step_in();
   void step_over();
-  void remove_breakpoint(uint64_t addr);
-  uint64_t get_offset_pc();
-  uint64_t offset_dwarf_address(uint64_t addr);
+  void remove_breakpoint(std::intptr_t addr);
+  std::intptr_t get_offset_pc();
+  std::intptr_t offset_dwarf_address(std::intptr_t addr);
 
-  dwarf::die get_function_from_pc(u_int64_t pc);
+  dwarf::die get_function_from_pc(std::intptr_t pc);
 
-  dwarf::line_table::iterator get_line_entry_from_pc(uint64_t pc);
+  dwarf::line_table::iterator get_line_entry_from_pc(std::intptr_t pc);
 
   ~Debugger();
 };
