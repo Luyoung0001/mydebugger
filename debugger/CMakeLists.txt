@@ -12,6 +12,7 @@ link_directories(${LIB_PATH})
 
 aux_source_directory(./ SRC)
 
+
 set(LIBRARY_OUTPUT_PATH ${LIB_PATH})
 
 add_library(${DBG_LIB} SHARED ${SRC})

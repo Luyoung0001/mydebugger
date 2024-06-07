@@ -57,20 +57,19 @@ void Debugger::wait_for_signal() {
 void Debugger::handle_sigtrap(siginfo_t info) {
   switch (info.si_code) {
   case SI_KERNEL:
-  // 这是重点要处理的信号源,断点引起的
+    // 这是重点要处理的信号源,断点引起的
   case TRAP_BRKPT: {
     set_pc(get_pc() - 1);
     std::cout << "Hit breakpoint at adsress 0x" << std::hex << get_pc()
               << std::endl;
     auto offset_pc = offset_load_address(get_pc()); // 获取当前pc 的 offset
-    // 经过调试，下一行代码有问题
     auto line_entry =
         get_line_entry_from_pc(offset_pc); // 从 offset 返回 line_table 迭代器
     print_source(line_entry->file->path, line_entry->line); // 打印源代码
-    return;
+    break;
   }
   case TRAP_TRACE:
-    return;
+    break;
   default:
     // 我们只关心前两种信号源
     std::cout << "unknown SIGTRAP code " << info.si_code << std::endl;
@@ -98,9 +97,6 @@ u_int64_t Debugger::offset_load_address(u_int64_t addr) {
 void Debugger::print_source(const std::string &file_name, unsigned line,
                             unsigned n_lines_context) {
   std::ifstream file{file_name};
-
-  std::cout << "OK, it is here. " << std::endl;
-
   // 调整开始的行和结束的行
   auto start_line = line <= n_lines_context ? 1 : line - n_lines_context;
   auto end_line = line + n_lines_context +
@@ -153,6 +149,7 @@ void Debugger::run() {
   initialise_load_address(); // 初始化
 
   char *line = nullptr;
+
   while ((line = linenoise("minidbg> ")) != nullptr) {
     handle_command(line);
     linenoiseHistoryAdd(line);
@@ -164,6 +161,7 @@ void Debugger::run() {
 void Debugger::handle_command(const std::string &line) {
   auto args = helper::split(line, ' ');
   auto command = args[0];
+
   if (helper::is_prefix(command, "continue")) {
     continue_execution();
 
@@ -203,17 +201,9 @@ void Debugger::handle_command(const std::string &line) {
                          std::stol(val, 0, 16));
     }
   }
-
-  // 单步执行，汇编指令级的
-  else if (helper::is_prefix(command, "stepi")) {
-    single_step_instruction_with_breakpoint_check();
-    auto line_entry = get_line_entry_from_pc(get_pc());
-    // 打印源代码 context
-    print_source(line_entry->file->path, line_entry->line);
-
-  }
-
+  // 单步执行
   else if (helper::is_prefix(command, "step")) {
+    std::cout << "step_in:" << std::endl;
     step_in();
   }
 
@@ -224,6 +214,14 @@ void Debugger::handle_command(const std::string &line) {
   else if (helper::is_prefix(command, "finish")) {
     step_out();
   }
+  // 单步执行，汇编指令级的
+  else if (helper::is_prefix(command, "stepi")) {
+    single_step_instruction_with_breakpoint_check();
+    auto line_entry = get_line_entry_from_pc(get_pc());
+    // 打印源代码 context
+    print_source(line_entry->file->path, line_entry->line);
+
+  }
 
   else {
     std::cerr << "Unkown command\n";
@@ -233,13 +231,14 @@ void Debugger::handle_command(const std::string &line) {
 // 继续执行
 void Debugger::continue_execution() {
   step_over_breakpoint();
-  ptrace(PT_CONTINUE, m_pid, nullptr, 0);
+  ptrace(PT_CONTINUE, m_pid, nullptr, nullptr);
   wait_for_signal();
 }
 
 // 单步执行
 void Debugger::single_step_instruction() {
   ptrace(PTRACE_SINGLESTEP, m_pid, nullptr, nullptr);
+  wait_for_signal();
 }
 
 // 单步执行 with bp
@@ -308,7 +307,10 @@ void Debugger::remove_breakpoint(uint64_t addr) {
 
 // step_in
 void Debugger::step_in() {
+  std::cout << "debug info: \n";
+  std::cout << "get_offset_pc: " << get_offset_pc() << std::endl;
   // 拿到 line entry 的行编号
+
   auto line = get_line_entry_from_pc(get_offset_pc())->line;
 
   while (get_line_entry_from_pc(get_offset_pc())->line == line) {
@@ -419,6 +421,9 @@ dwarf::die Debugger::get_function_from_pc(u_int64_t pc) {
 
 // 从 pc 得到 line_table 的迭代器
 dwarf::line_table::iterator Debugger::get_line_entry_from_pc(uint64_t pc) {
+
+  std::cout << "At adsress 0x" << std::hex << get_pc() << std::endl;
+
   for (auto &cu : m_dwarf.compilation_units()) { // 遍历所有 cu
     if (die_pc_range(cu.root()).contains(pc)) {
       auto &lt = cu.get_line_table(); // 拿到 cu 的line table，line table
