@@ -118,7 +118,6 @@ void Debugger::print_source(const std::string &file_name, unsigned line,
     std::cout << c;
     if (c == '\n') {
       ++current_line;
-      // Output cursor if we're at the current line
       std::cout << (current_line == line ? "> " : "  ");
     }
   }
@@ -169,9 +168,28 @@ void Debugger::handle_command(const std::string &line) {
 
   // 打断点
   else if (helper::is_prefix(command, "break")) { // break 地址
-    std::string addr{args[1], 2};
-    set_breakPoint(std::stoull(addr, 0, 16));
 
+    if (args[1][0] == '0' && args[1][1] == 'x') {
+      std::string addr{args[1], 2};
+      set_breakPoint(std::stol(addr, 0, 16));
+    }
+
+    else if (args[1].find(':') != std::string::npos) {
+      auto file_and_line = helper::split(args[1], ':');
+      set_breakpoint_at_source_line(file_and_line[0],
+                                    std::stoi(file_and_line[1]));
+    }
+
+    else {
+      set_breakpoint_at_function(args[1]);
+    }
+
+  } else if (helper::is_prefix(command, "symbol")) {
+    auto syms = lookup_symbol(args[1]);
+    for (auto &&s : syms) {
+      std::cout << s.name << ' ' << to_string(s.type) << " 0x" << std::hex
+                << s.addr << std::endl;
+    }
   }
 
   // 读写内存
@@ -179,7 +197,8 @@ void Debugger::handle_command(const std::string &line) {
     std::string addr{args[2], 2}; // assume 0xADDRESS
 
     if (helper::is_prefix(args[1], "read")) {
-      std::cout << std::hex << read_memory(std::stoull(addr, 0, 16)) << std::endl;
+      std::cout << std::hex << read_memory(std::stoull(addr, 0, 16))
+                << std::endl;
     }
     if (helper::is_prefix(args[1], "write")) {
       std::string val{args[3], 2}; // assume 0xVAL
@@ -220,6 +239,16 @@ void Debugger::handle_command(const std::string &line) {
     auto line_entry = get_line_entry_from_pc(get_offset_pc());
     // 打印源代码 context
     print_source(line_entry->file->path, line_entry->line);
+  }
+
+  // unwinding the stack
+  else if (helper::is_prefix(command, "backtrace")) {
+    print_backtrace();
+  }
+
+  // // this can not work, maybe of the version of libelfin.
+  else if (helper::is_prefix(command, "variables")) {
+    read_variables();
   }
 
   else {
@@ -320,7 +349,9 @@ void Debugger::step_in() {
   print_source(line_entry->file->path, line_entry->line);
 }
 
-std::intptr_t Debugger::get_offset_pc() { return offset_load_address(get_pc()); }
+std::intptr_t Debugger::get_offset_pc() {
+  return offset_load_address(get_pc());
+}
 
 // step_over
 // 有很多的方法，不过目前来说最简单的方法是给当前函数的每一个行打一个断点，然后
@@ -471,6 +502,150 @@ uint64_t Debugger::read_memory(std::intptr_t address) {
 
 void Debugger::write_memory(std::intptr_t address, uint64_t value) {
   ptrace(PTRACE_POKEDATA, m_pid, address, value);
+}
+
+// source break
+void Debugger::set_breakpoint_at_function(const std::string &name) {
+  for (const auto &cu : m_dwarf.compilation_units()) {
+    for (const auto &die : cu.root()) {
+      if (die.has(dwarf::DW_AT::name) && at_name(die) == name) {
+        auto low_pc = dwarf::at_low_pc(die);
+        auto entry = get_line_entry_from_pc(low_pc);
+        ++entry; // 跳过预言
+        set_breakPoint(offset_dwarf_address(entry->address));
+      }
+    }
+  }
+}
+
+// helper
+bool is_suffix(const std::string &s, const std::string &of) {
+  if (s.size() > of.size())
+    return false;
+  auto diff = of.size() - s.size();
+  return std::equal(s.begin(), s.end(), of.begin() + diff);
+}
+void Debugger::set_breakpoint_at_source_line(const std::string &file,
+                                             unsigned line) {
+  for (const auto &cu : m_dwarf.compilation_units()) {
+    if (is_suffix(file, dwarf::at_name(cu.root()))) {
+      const auto lt = cu.get_line_table();
+
+      for (const auto &entry : lt) {
+        if (entry.is_stmt && entry.line == line) {
+          set_breakPoint(offset_dwarf_address(entry.address));
+          return;
+        }
+      }
+    }
+  }
+}
+
+std::vector<symmbol::symbol> Debugger::lookup_symbol(const std::string &name) {
+  std::vector<symmbol::symbol> syms;
+
+  for (auto &sec : m_elf.sections()) {
+    if (sec.get_hdr().type != elf::sht::symtab &&
+        sec.get_hdr().type != elf::sht::dynsym)
+      continue;
+
+    for (auto sym : sec.as_symtab()) {
+      if (sym.get_name() == name) {
+        auto &d = sym.get_data();
+        syms.push_back(symmbol::symbol{symmbol::to_symbol_type(d.type()),
+                                       sym.get_name(), d.value});
+      }
+    }
+  }
+
+  return syms;
+}
+
+// unwinding the stack
+void Debugger::print_backtrace() {
+  auto output_frame = [frame_number = 0](auto &&func) mutable {
+    std::cout << "frame #" << frame_number++ << ": 0x" << dwarf::at_low_pc(func)
+              << ' ' << dwarf::at_name(func) << std::endl;
+  };
+
+  auto current_func = get_function_from_pc(get_offset_pc());
+  output_frame(current_func);
+
+  std::intptr_t frame_pointer = get_register_value(m_pid, registers::reg::rbp);
+  std::intptr_t return_address = read_memory(frame_pointer + 8);
+
+  while (dwarf::at_name(current_func) != "main") {
+    current_func = get_function_from_pc(offset_load_address(return_address));
+    output_frame(current_func);
+    frame_pointer = read_memory(frame_pointer);
+    return_address = read_memory(frame_pointer + 8);
+  }
+}
+
+// debugger variables
+class ptrace_expr_context : public dwarf::expr_context {
+  pid_t m_pid;
+  std::intptr_t m_load_address;
+
+public:
+  ptrace_expr_context(pid_t pid, std::intptr_t load_address)
+      : m_pid{pid}, m_load_address(load_address) {}
+
+  dwarf::taddr reg(unsigned regnum) override {
+    return registers::get_register_value_from_dwarf_register(m_pid, regnum);
+  }
+
+  dwarf::taddr pc() override {
+    struct user_regs_struct regs;
+    ptrace(PTRACE_GETREGS, m_pid, nullptr, &regs);
+    return regs.rip - m_load_address;
+  }
+
+  dwarf::taddr deref_size(dwarf::taddr address, unsigned size) override {
+    // TODO take into account size
+    return ptrace(PTRACE_PEEKDATA, m_pid, address + m_load_address, nullptr);
+  }
+};
+
+void Debugger::read_variables() {
+  using namespace dwarf;
+  auto func = get_function_from_pc(get_offset_pc());
+  for (const auto &die : func) {
+
+    if (die.tag == DW_TAG::variable) {
+      auto loc_val = die[DW_AT::location];
+      // only supports exprlocs for now
+      if (loc_val.get_type() == value::type::exprloc) {
+
+        ptrace_expr_context context{m_pid, m_load_address};
+        // this can not work, maybe of the version of libelfin.
+        auto result = loc_val.as_exprloc().evaluate(&context);
+
+        switch (result.location_type) {
+        case expr_result::type::address: {
+          std::intptr_t offset_addr = std::intptr_t(result.value);
+          auto value = read_memory(offset_addr + m_load_address);
+          std::cout << at_name(die) << " (0x" << std::hex << value
+                    << ") = " << value << std::endl;
+          break;
+        }
+
+        case expr_result::type::reg: {
+          auto value = registers::get_register_value_from_dwarf_register(
+              m_pid, result.value);
+          std::cout << at_name(die) << " (reg " << result.value
+                    << ") = " << value << std::endl;
+          break;
+        }
+
+        default:
+          throw std::runtime_error{"Unhandled variable location"};
+        }
+      } else {
+        throw std::runtime_error{"Unhandled variable location"};
+      }
+    }
+  }
 }
 
 Debugger::~Debugger() {}

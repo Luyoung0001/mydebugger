@@ -19,3 +19,37 @@ bool is_prefix(const std::string &s, const std::string &of) {
 }
 
 } // namespace helper
+
+namespace symmbol {
+symmbol::symbol_type to_symbol_type(elf::stt sym) {
+  switch (sym) {
+  case elf::stt::notype:
+    return symmbol::symbol_type::notype;
+  case elf::stt::object:
+    return symmbol::symbol_type::object;
+  case elf::stt::func:
+    return symmbol::symbol_type::func;
+  case elf::stt::section:
+    return symmbol::symbol_type::section;
+  case elf::stt::file:
+    return symmbol::symbol_type::file;
+  default:
+    return symmbol::symbol_type::notype;
+  }
+};
+std::string to_string(symmbol::symbol_type st) {
+  switch (st) {
+  case symmbol::symbol_type::notype:
+    return "notype";
+  case symmbol::symbol_type::object:
+    return "object";
+  case symmbol::symbol_type::func:
+    return "func";
+  case symmbol::symbol_type::section:
+    return "section";
+  case symmbol::symbol_type::file:
+    return "file";
+  }
+  return "null";
+}
+} // namespace sysmbol

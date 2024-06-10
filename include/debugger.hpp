@@ -1,8 +1,8 @@
 #pragma once
-
 #include "../libelfin/dwarf/dwarf++.hh"
 #include "../libelfin/elf/elf++.hh"
 #include "breakpoint.hpp"
+#include "helpers.hpp"
 #include <csignal>
 #include <string>
 #include <sys/cdefs.h>
@@ -59,6 +59,13 @@ public:
   dwarf::die get_function_from_pc(std::intptr_t pc);
 
   dwarf::line_table::iterator get_line_entry_from_pc(std::intptr_t pc);
+  // source level
+  void set_breakpoint_at_function(const std::string &name);
+  void set_breakpoint_at_source_line(const std::string &file, unsigned line);
+  std::vector<symmbol::symbol> lookup_symbol(const std::string &name);
+  void print_backtrace();
+
+  void read_variables();
 
   ~Debugger();
 };
