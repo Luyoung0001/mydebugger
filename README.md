@@ -6,7 +6,7 @@
 ## 本项目 main 分支没有任何代码，代发放在了 linux_version 分支
 事实上，我很少参考作者放的 git 仓库代码，我仅仅参考了作者的博客中的代码，那已经足够了。
 
-我编写了很系统的 CMakeLists.txt 文件，我认为这样非常有利于清晰地组织和修改。你可以直接克隆这些代码，然后在和最外层 CMakeLists.txt的目录中：
+我编写了很系统的 CMakeLists.txt 文件，我认为这样非常有利于清晰地组织和修改。你可以直接克隆这些代码，然后进入 libfin 目录，分别在 dwarf、elf目录中运行 make（这是为了产生动态库），之后在最外层 CMakeLists.txt的目录中：
 
 ```bash
 cmake -B cmake
